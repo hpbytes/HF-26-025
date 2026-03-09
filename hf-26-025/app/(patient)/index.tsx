@@ -1,21 +1,16 @@
 import { StyleSheet } from 'react-native';
-
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-export default function PatientDashboard() {
+export default function PatientHomeScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Patient Dashboard</ThemedText>
+      <ThemedText type="title">Home</ThemedText>
+      <ThemedText>Drug search, availability &amp; stock status</ThemedText>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
 });

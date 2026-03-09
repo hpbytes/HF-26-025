@@ -2,11 +2,11 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-export default function InventoryScreen() {
+export default function PrescriptionsScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Inventory</ThemedText>
-      <ThemedText>Stock levels, batch breakdown &amp; incoming shipments</ThemedText>
+      <ThemedText type="title">Prescriptions</ThemedText>
+      <ThemedText>Track active &amp; past prescriptions</ThemedText>
     </ThemedView>
   );
 }

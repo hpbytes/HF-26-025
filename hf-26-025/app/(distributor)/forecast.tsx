@@ -2,11 +2,11 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
-export default function InventoryScreen() {
+export default function ForecastScreen() {
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title">Inventory</ThemedText>
-      <ThemedText>Stock levels, batch breakdown &amp; incoming shipments</ThemedText>
+      <ThemedText type="title">Forecast</ThemedText>
+      <ThemedText>AI demand predictions — 30 / 60 / 90 days</ThemedText>
     </ThemedView>
   );
 }

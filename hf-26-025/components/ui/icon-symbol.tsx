@@ -18,6 +18,20 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  // Manufacturer tabs
+  'plus.rectangle.fill': 'add-box',
+  'map.fill': 'map',
+  'person.2.fill': 'people',
+  'exclamationmark.triangle.fill': 'warning',
+  // Distributor tabs
+  'archivebox.fill': 'inventory',
+  'arrow.left.arrow.right': 'swap-horiz',
+  'chart.line.uptrend.xyaxis': 'trending-up',
+  'clock.fill': 'history',
+  // Patient tabs
+  'qrcode.viewfinder': 'qr-code-scanner',
+  'list.clipboard.fill': 'description',
+  'bell.fill': 'notifications',
 } as IconMapping;
 
 /**
