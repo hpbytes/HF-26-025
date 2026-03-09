@@ -94,10 +94,23 @@ export function useScan() {
     return result;
   }, []);
 
+  /** Parse QR data (JSON string from manufacturer QR) and verify the batch */
+  const verifyFromQR = useCallback(async (rawData: string): Promise<ScanResult> => {
+    let batchId: string;
+    try {
+      const parsed = JSON.parse(rawData);
+      batchId = parsed.batchId || rawData;
+    } catch {
+      // Not JSON — treat the raw string as a batch ID
+      batchId = rawData.trim();
+    }
+    return verifyBatch(batchId);
+  }, [verifyBatch]);
+
   const resetScan = useCallback(() => {
     setState('scanning');
     setScanResult(null);
   }, []);
 
-  return { state, scanResult, verifyBatch, resetScan };
+  return { state, scanResult, verifyBatch, verifyFromQR, resetScan };
 }
