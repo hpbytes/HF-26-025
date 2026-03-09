@@ -2,7 +2,7 @@ import { StyleSheet, ScrollView, View, TouchableOpacity, Image, StatusBar } from
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
-import { HC, RoleColors, CardShadow, CardShadowMd } from '@/constants/theme';
+import { HC, RoleColors, CardShadow } from '@/constants/theme';
 
 const R = RoleColors.manufacturer;
 
