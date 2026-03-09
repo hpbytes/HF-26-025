@@ -1,9 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StyleSheet, View, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { Dropdown } from '@/components/shared/Dropdown';
-import { DRUGS, MOCK_DISTRIBUTORS } from '@/constants/medchain';
+import { DRUGS } from '@/constants/medchain';
+import { api } from '@/services/api';
 import type { InitiateTransferData } from '@/hooks/use-transfers';
+
+interface DistributorOption {
+  id: string;
+  name: string;
+  region: string;
+  wallet: string;
+}
 
 interface Props {
   onSubmit: (data: InitiateTransferData) => void;
@@ -16,9 +24,16 @@ export function InitiateForm({ onSubmit, onCancel, loading }: Props) {
   const [batchId, setBatchId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [toId, setToId] = useState('');
+  const [distributors, setDistributors] = useState<DistributorOption[]>([]);
+
+  useEffect(() => {
+    api.get<{ distributors: DistributorOption[] }>('/auth/distributors')
+      .then((r) => setDistributors(r.distributors ?? []))
+      .catch(() => setDistributors([]));
+  }, []);
 
   const selectedDrug = DRUGS.find((d) => d.code === drugCode);
-  const selectedTo = MOCK_DISTRIBUTORS.find((d) => d.id === toId);
+  const selectedTo = distributors.find((d) => d.id === toId);
 
   const isValid = drugCode && batchId.trim() && quantity.trim() && parseInt(quantity, 10) > 0 && toId;
 
@@ -73,7 +88,7 @@ export function InitiateForm({ onSubmit, onCancel, loading }: Props) {
         placeholder="Select recipient"
         value={toId}
         onSelect={setToId}
-        options={MOCK_DISTRIBUTORS.map((d) => ({ label: `${d.name} (${d.region})`, value: d.id }))}
+        options={distributors.map((d) => ({ label: `${d.name} (${d.region})`, value: d.id }))}
       />
 
       <View style={styles.actions}>

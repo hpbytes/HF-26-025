@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { api } from '@/services/api';
 
 export interface DistributorSummary {
   id: string;
@@ -37,70 +38,66 @@ export interface DistributorDetail extends DistributorSummary {
   recentTransfers: TransferRecord[];
 }
 
-const MOCK_LIST: DistributorSummary[] = [
-  { id: 'd1', name: 'MedDist Chennai', region: 'Chennai', wallet: '0x123...def', activeBatches: 12, stockStatus: 'low', lastTransferDays: 2, alertCount: 2 },
-  { id: 'd2', name: 'PharmaLink Coimbatore', region: 'Coimbatore', wallet: '0x456...abc', activeBatches: 8, stockStatus: 'healthy', lastTransferDays: 5, alertCount: 0 },
-  { id: 'd3', name: 'HealthNet Madurai', region: 'Madurai', wallet: '0x789...012', activeBatches: 5, stockStatus: 'critical', lastTransferDays: 12, alertCount: 1 },
-  { id: 'd4', name: 'CareSupply Trichy', region: 'Trichy', wallet: '0xabc...345', activeBatches: 9, stockStatus: 'healthy', lastTransferDays: 3, alertCount: 0 },
-  { id: 'd5', name: 'MedFlow Salem', region: 'Salem', wallet: '0xdef...678', activeBatches: 6, stockStatus: 'low', lastTransferDays: 8, alertCount: 1 },
-];
+interface RawDistributor {
+  id: string;
+  wallet: string;
+  name: string;
+  region: string;
+}
 
-const MOCK_DETAIL: Record<string, Omit<DistributorDetail, keyof DistributorSummary>> = {
-  d1: {
-    stock: [
-      { drug: 'Paracetamol', quantity: 4200, status: 'ok' },
-      { drug: 'Artemether', quantity: 180, status: 'low' },
-      { drug: 'Insulin', quantity: 42, status: 'critical' },
-      { drug: 'Amoxicillin', quantity: 1800, status: 'ok' },
-    ],
-    demandVsSupply: [
-      { drug: 'Paracetamol', demand: 3500, supply: 4200 },
-      { drug: 'Artemether', demand: 400, supply: 180 },
-      { drug: 'Insulin', demand: 300, supply: 42 },
-      { drug: 'Amoxicillin', demand: 1200, supply: 1800 },
-    ],
-    recentTransfers: [
-      { batchId: 'BATCH_TN_PARA_20240602_A1B2C3', drug: 'Paracetamol', quantity: 5000, date: '2 Jun 2024', status: 'received' },
-      { batchId: 'BATCH_TN_ARTE_20240528_D4E5F6', drug: 'Artemether', quantity: 500, date: '28 May 2024', status: 'received' },
-      { batchId: 'BATCH_TN_INSU_20240520_789ABC', drug: 'Insulin', quantity: 200, date: '20 May 2024', status: 'received' },
-    ],
-  },
-  d3: {
-    stock: [
-      { drug: 'Insulin', quantity: 18, status: 'critical' },
-      { drug: 'Paracetamol', quantity: 900, status: 'low' },
-      { drug: 'Chloroquine', quantity: 2100, status: 'ok' },
-    ],
-    demandVsSupply: [
-      { drug: 'Insulin', demand: 250, supply: 18 },
-      { drug: 'Paracetamol', demand: 1500, supply: 900 },
-      { drug: 'Chloroquine', demand: 800, supply: 2100 },
-    ],
-    recentTransfers: [
-      { batchId: 'BATCH_TN_CHLO_20240515_AABB11', drug: 'Chloroquine', quantity: 3000, date: '15 May 2024', status: 'received' },
-    ],
-  },
-};
+interface RawBatch {
+  batchId: string;
+  drugName: string;
+  quantity: number;
+  status: number;
+  isActive: boolean;
+}
 
-function getDefaultDetail(summary: DistributorSummary): Omit<DistributorDetail, keyof DistributorSummary> {
-  return {
-    stock: [
-      { drug: 'Paracetamol', quantity: 2000, status: 'ok' },
-      { drug: 'Metformin', quantity: 1500, status: 'ok' },
-    ],
-    demandVsSupply: [
-      { drug: 'Paracetamol', demand: 1800, supply: 2000 },
-      { drug: 'Metformin', demand: 1200, supply: 1500 },
-    ],
-    recentTransfers: [
-      { batchId: 'BATCH_TN_PARA_20240601_XYZ123', drug: 'Paracetamol', quantity: 3000, date: '1 Jun 2024', status: 'received' },
-    ],
-  };
+function getStockStatus(totalQty: number): 'healthy' | 'low' | 'critical' {
+  if (totalQty <= 50) return 'critical';
+  if (totalQty <= 200) return 'low';
+  return 'healthy';
+}
+
+function shortAddr(a: string): string {
+  return a.length > 10 ? a.slice(0, 6) + '...' + a.slice(-4) : a;
 }
 
 export function useDistributors() {
-  const [distributors] = useState<DistributorSummary[]>(MOCK_LIST);
+  const [distributors, setDistributors] = useState<DistributorSummary[]>([]);
   const [filter, setFilter] = useState<'all' | 'low' | 'critical' | 'inactive'>('all');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<{ distributors: RawDistributor[] }>('/auth/distributors')
+      .then(async (r) => {
+        const summaries: DistributorSummary[] = await Promise.all(
+          r.distributors.map(async (d) => {
+            let activeBatches = 0;
+            let totalQty = 0;
+            try {
+              const res = await api.get<{ batches: RawBatch[] }>(`/batches/by/owner/${encodeURIComponent(d.wallet)}`);
+              activeBatches = res.batches.filter((b) => b.isActive).length;
+              totalQty = res.batches.reduce((s, b) => s + b.quantity, 0);
+            } catch { /* no batches */ }
+            return {
+              id: d.id,
+              name: d.name,
+              region: d.region,
+              wallet: shortAddr(d.wallet),
+              activeBatches,
+              stockStatus: getStockStatus(totalQty),
+              lastTransferDays: 0,
+              alertCount: 0,
+            };
+          })
+        );
+        setDistributors(summaries);
+      })
+      .catch(() => setDistributors([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = distributors.filter((d) => {
     if (filter === 'all') return true;
@@ -111,11 +108,10 @@ export function useDistributors() {
   });
 
   const getDetail = useCallback((id: string): DistributorDetail | null => {
-    const summary = MOCK_LIST.find((d) => d.id === id);
+    const summary = distributors.find((d) => d.id === id);
     if (!summary) return null;
-    const extra = MOCK_DETAIL[id] || getDefaultDetail(summary);
-    return { ...summary, ...extra };
-  }, []);
+    return { ...summary, stock: [], demandVsSupply: [], recentTransfers: [] };
+  }, [distributors]);
 
-  return { distributors: filtered, filter, setFilter, getDetail };
+  return { distributors: filtered, filter, setFilter, getDetail, loading };
 }

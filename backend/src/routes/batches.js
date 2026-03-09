@@ -94,6 +94,7 @@ router.get("/by/manufacturer/:wallet", async (req, res, next) => {
           currentOwner: b.currentOwner,
           status: Number(b.status),
           isActive: b.isActive,
+          registeredAt: Number(b.registeredAt),
         };
       })
     );

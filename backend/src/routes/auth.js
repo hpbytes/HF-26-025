@@ -84,6 +84,31 @@ router.post("/grant/patient", walletAuth, async (req, res, next) => {
   }
 });
 
+// GET /api/auth/distributors — list known distributor wallets from deployed.json
+router.get("/distributors", async (req, res, next) => {
+  try {
+    const path = require("path");
+    const fs = require("fs");
+    const deployedPath = path.join(__dirname, "..", "..", "..", "contracts", "deployed.json");
+    const data = JSON.parse(fs.readFileSync(deployedPath, "utf8"));
+    const { accessControl } = getContracts();
+
+    const entries = Object.entries(data.wallets)
+      .filter(([key]) => key.startsWith("distributor"));
+
+    const distributors = await Promise.all(
+      entries.map(async ([key, wallet]) => {
+        const name = await accessControl.getWalletName(wallet).catch(() => "");
+        return { id: key, wallet, name: name || key, region: "Tamil Nadu" };
+      })
+    );
+
+    res.json({ distributors });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/auth/pause — pause the system (admin only)
 router.post("/pause", walletAuth, async (req, res, next) => {
   try {

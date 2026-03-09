@@ -1,17 +1,14 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, Image, StatusBar } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, ScrollView, View, TouchableOpacity, Image, StatusBar, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { ThemedText } from '@/components/themed-text';
 import { HC, RoleColors, CardShadow } from '@/constants/theme';
+import { api } from '@/services/api';
+import { useAuth } from '@/contexts/auth-context';
 
 const R = RoleColors.manufacturer;
-
-const STATS = [
-  { label: 'Total Batches', value: '1,247', initial: 'B', color: HC.primary, bg: HC.primaryLight },
-  { label: 'In Transit', value: '38', initial: 'T', color: '#7c3aed', bg: '#f5f3ff' },
-  { label: 'Open Alerts', value: '5', initial: 'A', color: HC.warning, bg: HC.warningBg },
-  { label: 'Compliance', value: '98.2%', initial: 'C', color: HC.success, bg: HC.successBg },
-];
 
 const QUICK_ACTIONS = [
   { label: 'Register\nBatch', initial: '+', route: '/(manufacturer)/add-batch' as const, gradient: [...R.gradient] as const },
@@ -19,20 +16,92 @@ const QUICK_ACTIONS = [
   { label: 'ML\nAlerts', initial: 'A', route: '/(manufacturer)/alerts' as const, gradient: ['#d97706', '#fbbf24'] as const },
 ];
 
-const RECENT_BATCHES = [
-  { id: 'BATCH_TN_PARA_20260308_A1F3', drug: 'Paracetamol', qty: '5,000', status: 'Delivered', time: '2h ago' },
-  { id: 'BATCH_TN_AMOX_20260308_B7E2', drug: 'Amoxicillin', qty: '3,200', status: 'In Transit', time: '4h ago' },
-  { id: 'BATCH_TN_METF_20260307_C4D9', drug: 'Metformin', qty: '8,500', status: 'Registered', time: '1d ago' },
-];
+const STATUS_MAP: Record<number, string> = { 0: 'Registered', 1: 'Active', 2: 'In Transit', 3: 'Delivered', 4: 'Flagged' };
 
 const statusColor: Record<string, { text: string; bg: string; dot: string }> = {
   Delivered: { text: HC.success, bg: HC.successBg, dot: HC.success },
   'In Transit': { text: HC.warning, bg: HC.warningBg, dot: HC.warning },
   Registered: { text: HC.primary, bg: '#ecfeff', dot: HC.primary },
+  Active: { text: HC.primary, bg: '#ecfeff', dot: HC.primary },
+  Flagged: { text: '#dc2626', bg: '#fef2f2', dot: '#dc2626' },
 };
+
+interface RawBatch {
+  batchId: string;
+  drugName: string;
+  region: string;
+  quantity: number;
+  expiryDate: number;
+  currentOwner: string;
+  status: number;
+  isActive: boolean;
+  registeredAt?: number;
+}
+
+function timeAgo(ts: number): string {
+  if (!ts) return '';
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function shortId(id: string): string {
+  if (id.length <= 20) return id;
+  return id.slice(0, 10) + '...' + id.slice(-6);
+}
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { wallet } = useAuth();
+  const [batches, setBatches] = useState<RawBatch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [distributorCount, setDistributorCount] = useState(0);
+
+  const loadData = useCallback(() => {
+    if (!wallet) { setLoading(false); return; }
+    setLoading(true);
+
+    const loadBatches = api.get<{ batches: RawBatch[] }>(`/batches/by/manufacturer/${encodeURIComponent(wallet)}`)
+      .then((r) => setBatches(r.batches ?? []))
+      .catch(() => setBatches([]));
+
+    const loadDistributors = api.get<{ distributors: { id: string }[] }>('/auth/distributors')
+      .then((r) => setDistributorCount(r.distributors?.length ?? 0))
+      .catch(() => setDistributorCount(0));
+
+    Promise.all([loadBatches, loadDistributors]).finally(() => setLoading(false));
+  }, [wallet]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Refresh when screen comes back into focus (e.g. after adding a batch)
+  useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
+
+  const totalBatches = batches.length;
+  const inTransit = batches.filter((b) => b.status === 2).length;
+  const flagged = batches.filter((b) => b.status === 4).length;
+  const activeCount = batches.filter((b) => b.isActive).length;
+  const compliance = totalBatches > 0 ? (((totalBatches - flagged) / totalBatches) * 100).toFixed(1) : '100';
+
+  const stats = [
+    { label: 'Total Batches', value: String(totalBatches), initial: 'B', color: HC.primary, bg: HC.primaryLight },
+    { label: 'In Transit', value: String(inTransit), initial: 'T', color: '#7c3aed', bg: '#f5f3ff' },
+    { label: 'Active', value: String(activeCount), initial: 'A', color: HC.warning, bg: HC.warningBg },
+    { label: 'Compliance', value: `${compliance}%`, initial: 'C', color: HC.success, bg: HC.successBg },
+  ];
+
+  const recentBatches = [...batches]
+    .sort((a, b) => (b.registeredAt ?? 0) - (a.registeredAt ?? 0))
+    .slice(0, 5)
+    .map((b) => ({
+      id: shortId(b.batchId),
+      drug: b.drugName,
+      qty: b.quantity.toLocaleString(),
+      status: STATUS_MAP[b.status] ?? 'Registered',
+      time: timeAgo(b.registeredAt ?? 0),
+    }));
 
   return (
     <View style={styles.root}>
@@ -56,7 +125,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.heroStatsRow}>
-            {[{ v: '1,247', l: 'Batches' }, { v: '12', l: 'Distributors' }, { v: '10', l: 'Regions' }].map((s, i) => (
+            {[{ v: String(totalBatches), l: 'Batches' }, { v: String(distributorCount), l: 'Distributors' }, { v: String(new Set(batches.map((b) => b.region)).size), l: 'Regions' }].map((s, i) => (
               <View key={s.l} style={{ flexDirection: 'row', alignItems: 'center' }}>
                 {i > 0 && <View style={styles.heroStatDivider} />}
                 <View style={styles.heroStat}>
@@ -70,7 +139,7 @@ export default function HomeScreen() {
 
         {/* ── Stats Grid ── */}
         <View style={styles.statsGrid}>
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <View key={s.label} style={styles.statCard}>
               <View style={[styles.statIconWrap, { backgroundColor: s.bg }]}>
                 <ThemedText style={[styles.statIcon, { color: s.color }]}>{s.initial}</ThemedText>
@@ -109,25 +178,35 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.batchesCard}>
-            {RECENT_BATCHES.map((b, i) => {
-              const sc = statusColor[b.status] || statusColor.Registered;
-              return (
-                <View key={b.id} style={[styles.batchRow, i < RECENT_BATCHES.length - 1 && styles.batchDivider]}>
-                  <View style={styles.batchLeft}>
-                    <View style={styles.batchHeader}>
-                      <ThemedText style={styles.batchDrug}>{b.drug}</ThemedText>
-                      <ThemedText style={styles.batchTime}>{b.time}</ThemedText>
+            {loading ? (
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <ActivityIndicator color={HC.primary} />
+              </View>
+            ) : recentBatches.length === 0 ? (
+              <View style={{ padding: 32, alignItems: 'center' }}>
+                <ThemedText style={{ color: HC.textMuted, fontSize: 13 }}>No batches yet. Register your first batch!</ThemedText>
+              </View>
+            ) : (
+              recentBatches.map((b, i) => {
+                const sc = statusColor[b.status] || statusColor.Registered;
+                return (
+                  <View key={b.id + i} style={[styles.batchRow, i < recentBatches.length - 1 && styles.batchDivider]}>
+                    <View style={styles.batchLeft}>
+                      <View style={styles.batchHeader}>
+                        <ThemedText style={styles.batchDrug}>{b.drug}</ThemedText>
+                        <ThemedText style={styles.batchTime}>{b.time}</ThemedText>
+                      </View>
+                      <ThemedText style={styles.batchId}>{b.id}</ThemedText>
+                      <ThemedText style={styles.batchQty}>{b.qty} units</ThemedText>
                     </View>
-                    <ThemedText style={styles.batchId}>{b.id}</ThemedText>
-                    <ThemedText style={styles.batchQty}>{b.qty} units</ThemedText>
+                    <View style={[styles.statusPill, { backgroundColor: sc.bg }]}>
+                      <View style={[styles.statusDot, { backgroundColor: sc.dot }]} />
+                      <ThemedText style={[styles.statusText, { color: sc.text }]}>{b.status}</ThemedText>
+                    </View>
                   </View>
-                  <View style={[styles.statusPill, { backgroundColor: sc.bg }]}>
-                    <View style={[styles.statusDot, { backgroundColor: sc.dot }]} />
-                    <ThemedText style={[styles.statusText, { color: sc.text }]}>{b.status}</ThemedText>
-                  </View>
-                </View>
-              );
-            })}
+                );
+              })
+            )}
           </View>
         </View>
 
@@ -136,7 +215,7 @@ export default function HomeScreen() {
           <ThemedText style={styles.networkTitle}>Supply Chain Network</ThemedText>
           <ThemedText style={styles.networkDesc}>Real-time overview of your distribution network</ThemedText>
           <View style={styles.networkStats}>
-            {[{ v: '12', l: 'Distributors' }, { v: '10', l: 'Regions' }, { v: '12', l: 'Drug Types' }].map((s, i) => (
+            {[{ v: String(distributorCount), l: 'Distributors' }, { v: String(new Set(batches.map((b) => b.region)).size), l: 'Regions' }, { v: '12', l: 'Drug Types' }].map((s, i) => (
               <View key={s.l} style={{ flexDirection: 'row', alignItems: 'center' }}>
                 {i > 0 && <View style={styles.networkDivider} />}
                 <View style={styles.networkStat}>

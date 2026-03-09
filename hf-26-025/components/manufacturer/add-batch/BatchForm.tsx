@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StyleSheet, TextInput, TouchableOpacity, View, ScrollView, Alert, Platform } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { ThemedText } from '@/components/themed-text';
 import { Dropdown } from '@/components/shared/Dropdown';
-import { DRUGS, REGIONS, MOCK_DISTRIBUTORS } from '@/constants/medchain';
+import { DRUGS, REGIONS } from '@/constants/medchain';
+import { api } from '@/services/api';
 import { HC, CardShadow } from '@/constants/theme';
 const MFG = HC;
 import { generateBatchId, BatchFormData } from '@/hooks/use-batch';
@@ -15,7 +16,7 @@ interface Props {
 
 const drugOptions = DRUGS.map((d) => ({ label: d.name, value: d.code }));
 const regionOptions = REGIONS.map((r) => ({ label: r, value: r }));
-const distributorOptions = MOCK_DISTRIBUTORS.map((d) => ({ label: `${d.name} (${d.region})`, value: d.id }));
+
 
 export function BatchForm({ onSubmit, loading }: Props) {
   const [drugCode, setDrugCode] = useState('');
@@ -26,6 +27,13 @@ export function BatchForm({ onSubmit, loading }: Props) {
   const [showExpPicker, setShowExpPicker] = useState(false);
   const [region, setRegion] = useState('');
   const [distributorId, setDistributorId] = useState('');
+  const [distributorOptions, setDistributorOptions] = useState<{ label: string; value: string }[]>([]);
+
+  useEffect(() => {
+    api.get<{ distributors: { id: string; name: string; region: string }[] }>('/auth/distributors')
+      .then((r) => setDistributorOptions((r.distributors ?? []).map((d) => ({ label: `${d.name} (${d.region})`, value: d.id }))))
+      .catch(() => setDistributorOptions([]));
+  }, []);
 
   const formatDate = (d: Date | null) => d ? d.toISOString().split('T')[0] : '';
 

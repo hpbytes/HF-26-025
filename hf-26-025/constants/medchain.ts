@@ -26,10 +26,4 @@ export const REGIONS = [
   'Kanchipuram',
 ];
 
-export const MOCK_DISTRIBUTORS = [
-  { id: 'd1', name: 'MedDist Chennai', region: 'Chennai', wallet: '0x123...def' },
-  { id: 'd2', name: 'PharmaLink Coimbatore', region: 'Coimbatore', wallet: '0x456...abc' },
-  { id: 'd3', name: 'HealthNet Madurai', region: 'Madurai', wallet: '0x789...012' },
-  { id: 'd4', name: 'CareSupply Trichy', region: 'Trichy', wallet: '0xabc...345' },
-  { id: 'd5', name: 'MedFlow Salem', region: 'Salem', wallet: '0xdef...678' },
-];
+
