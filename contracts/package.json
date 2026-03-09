@@ -1,0 +1,14 @@
+{
+  "name": "hf-26-025-contracts",
+  "version": "1.0.0",
+  "description": "Solidity smart contracts for HF-26-025",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.22.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "hf-26-025-backend",
+  "version": "1.0.0",
+  "description": "Node.js API Gateway for HF-26-025",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "helmet": "^8.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
