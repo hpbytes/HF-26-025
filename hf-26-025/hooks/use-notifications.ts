@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { api } from '@/services/api';
+import { useAuth } from '@/contexts/auth-context';
 
 export type NotificationType = 'stock_alert' | 'low_stock' | 'stock_restored' | 'refill_reminder' | 'verify_log';
 
@@ -16,68 +18,38 @@ export interface NotificationItem {
   actionTarget?: 'find_stock' | 'view_prescription' | 'scan';
 }
 
-const MOCK_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'n1', type: 'stock_alert', title: 'Stock Alert',
-    description: 'Insulin is critically low in Chennai. Your prescription needs this medicine.',
-    timestamp: '2 hrs ago', group: 'Today', read: false,
-    drug: 'Insulin', drugCode: 'INSU', actionLabel: 'Find Stock', actionTarget: 'find_stock',
-  },
-  {
-    id: 'n2', type: 'refill_reminder', title: 'Refill Reminder',
-    description: 'Metformin refill due in 5 days — 15 Jul 2024',
-    timestamp: '3 hrs ago', group: 'Today', read: false,
-    drug: 'Metformin', drugCode: 'METF', actionLabel: 'View Prescription', actionTarget: 'view_prescription',
-  },
-  {
-    id: 'n3', type: 'stock_restored', title: 'Stock Restored',
-    description: 'Artemether back in stock at Madurai. Previously low stock.',
-    timestamp: 'Yesterday · 14:20', group: 'Yesterday', read: true,
-    drug: 'Artemether', drugCode: 'ARTE',
-  },
-  {
-    id: 'n4', type: 'verify_log', title: 'Verification Log',
-    description: 'You verified Paracetamol on blockchain — ✅ Authentic · Batch BATCH_TN_PARA_...',
-    timestamp: 'Yesterday · 10:15', group: 'Yesterday', read: true,
-    drug: 'Paracetamol', drugCode: 'PARA',
-  },
-  {
-    id: 'n5', type: 'low_stock', title: 'Low Stock Warning',
-    description: 'Chloroquine stock is running low in Chennai region.',
-    timestamp: '2 days ago', group: 'Earlier', read: true,
-    drug: 'Chloroquine', drugCode: 'CHLO', actionLabel: 'Find Stock', actionTarget: 'find_stock',
-  },
-  {
-    id: 'n6', type: 'refill_reminder', title: 'Refill Reminder',
-    description: 'Amlodipine refill due in 10 days — 20 Jul 2024',
-    timestamp: '2 days ago', group: 'Earlier', read: true,
-    drug: 'Amlodipine', drugCode: 'AMLO', actionLabel: 'View Prescription', actionTarget: 'view_prescription',
-  },
-];
-
 export function useNotifications() {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+  const { wallet } = useAuth();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [filter, setFilter] = useState<'all' | 'unread' | 'stock' | 'refills'>('all');
+  const [loading, setLoading] = useState(true);
 
-  const filtered = notifications.filter((n) => {
-    if (filter === 'all') return true;
-    if (filter === 'unread') return !n.read;
-    if (filter === 'stock') return n.type === 'stock_alert' || n.type === 'low_stock' || n.type === 'stock_restored';
-    if (filter === 'refills') return n.type === 'refill_reminder';
-    return true;
-  });
+  const fetchNotifications = useCallback(() => {
+    if (!wallet) return;
+    const q = filter === 'all' ? '' : `?filter=${filter}`;
+    api.get<{ notifications: NotificationItem[]; unreadCount: number }>(`/notifications/${encodeURIComponent(wallet)}${q}`)
+      .then((r) => { setNotifications(r.notifications); setUnreadCount(r.unreadCount); })
+      .catch(() => setNotifications([]))
+      .finally(() => setLoading(false));
+  }, [wallet, filter]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  useEffect(() => {
+    setLoading(true);
+    fetchNotifications();
+  }, [fetchNotifications]);
 
-  const markRead = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
+  const markRead = useCallback(async (id: string) => {
+    await api.post(`/notifications/${encodeURIComponent(id)}/read`);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    setUnreadCount((c) => Math.max(0, c - 1));
   }, []);
 
-  const markAllRead = useCallback(() => {
+  const markAllRead = useCallback(async () => {
+    await api.post('/notifications/read-all');
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setUnreadCount(0);
   }, []);
 
-  return { notifications: filtered, filter, setFilter, unreadCount, markRead, markAllRead };
+  return { notifications, filter, setFilter, unreadCount, markRead, markAllRead, loading };
 }

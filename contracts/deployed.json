@@ -1,11 +1,17 @@
 {
-  "network": "localhost",
-  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  "deployedAt": "2026-03-09T09:44:38.186Z",
+  "network": "ganache",
+  "chainId": 1337,
+  "deployer": "0x4E5D719d144e52Cfc5621674DBAf7Ed0A95a4136",
+  "deployedAt": "2026-03-09T13:51:41.317Z",
   "contracts": {
-    "MedAccessControl": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    "MedBatch": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-    "MedTransfer": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-    "MedAudit": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+    "MedAccessControl": "0xf31477dA444590f414992003f3147Ce871686d83",
+    "MedBatch": "0xCdB36B09f4c38653a5366E9d3eB9C9a7a57ae89e",
+    "MedTransfer": "0x0925d7512c0976f5a9A4279B0f2638DA46020F64",
+    "MedAudit": "0x8716ed464f3272e22961F1758Ba4E3dfD5c4590A"
+  },
+  "wallets": {
+    "manufacturer": "0xBA4E8c01ED0DEC43d2B9ff0e83c8678f75806a87",
+    "distributor1": "0xFEb61e54F2447dEC724D5B36aFb54CB044c9fF4D",
+    "distributor2": "0xb7bFADA755E58ae663ed4Fa8618228D07A0db2FF"
   }
 }

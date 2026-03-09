@@ -12,7 +12,7 @@ module.exports = {
   networks: {
     hardhat: {},
     ganache: {
-      url: process.env.GANACHE_RPC_URL || "http://127.0.0.1:7545",
+      url: process.env.GANACHE_RPC_URL || "http://127.0.0.1:7544",
       chainId: 1337,
       accounts: {
         mnemonic: process.env.GANACHE_MNEMONIC || "test test test test test test test test test test test junk"

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { DRUGS, MOCK_DISTRIBUTORS } from '@/constants/medchain';
+import { api } from '@/services/api';
 
 export interface BatchFormData {
   drug: string;
@@ -49,27 +49,33 @@ export function useBatch() {
     setError(null);
 
     try {
-      const batchId = generateBatchId(form.drugCode);
-      const dist = MOCK_DISTRIBUTORS.find((d) => d.id === form.distributorId);
-      const drug = DRUGS.find((d) => d.code === form.drugCode);
+      const qrHash = `0x${generateHex(40)}`;
+      const mfgTs = Math.floor(new Date(form.manufactureDate).getTime() / 1000);
+      const expTs = Math.floor(new Date(form.expiryDate).getTime() / 1000);
 
-      // Simulate API call delay
-      await new Promise((r) => setTimeout(r, 1500));
+      const res = await api.post<{ txHash: string; batchId: string }>('/batches', {
+        drugName: form.drug,
+        region: form.region,
+        quantity: parseInt(form.quantity, 10),
+        manufactureDate: mfgTs,
+        expiryDate: expTs,
+        qrCodeHash: qrHash,
+      });
 
       const result: BatchResult = {
-        batchId,
-        drug: drug?.name || form.drug,
+        batchId: res.batchId,
+        drug: form.drug,
         quantity: parseInt(form.quantity, 10),
         manufactureDate: form.manufactureDate,
         expiryDate: form.expiryDate,
         region: form.region,
-        distributor: dist?.name || 'Unknown',
-        manufacturer: '0xABC...manufacturer',
-        qrHash: `0x${generateHex(40)}`,
-        txHash: `0x${generateHex(64)}`,
-        blockNumber: 48000 + Math.floor(Math.random() * 1000),
+        distributor: form.distributorId,
+        manufacturer: 'On-Chain',
+        qrHash,
+        txHash: res.txHash,
+        blockNumber: 0,
         timestamp: new Date().toISOString(),
-        gasUsed: 45000 + Math.floor(Math.random() * 10000),
+        gasUsed: 0,
       };
 
       return result;

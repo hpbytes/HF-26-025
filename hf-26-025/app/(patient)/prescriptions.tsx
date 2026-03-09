@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, ScrollView, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { PrescriptionCard } from '@/components/patient/prescriptions/prescription-card';
 import { RefillProgressBar } from '@/components/patient/prescriptions/refill-progress-bar';
 import { NearbyFacilityRow } from '@/components/patient/prescriptions/nearby-facility-row';
 import { usePrescriptions } from '@/hooks/use-prescriptions';
+import type { PrescriptionDetail } from '@/hooks/use-prescriptions';
 import type { StockBadge } from '@/hooks/use-drugs';
 
 type PrescriptionView = 'list' | 'detail';
@@ -23,10 +24,26 @@ export default function PrescriptionsScreen() {
   const { prescriptions, filter, setFilter, getDetail } = usePrescriptions();
   const [view, setView] = useState<PrescriptionView>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<PrescriptionDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (view === 'detail' && selectedId) {
+      setDetailLoading(true);
+      getDetail(selectedId)
+        .then((d) => setDetail(d || null))
+        .finally(() => setDetailLoading(false));
+    }
+  }, [view, selectedId, getDetail]);
 
   if (view === 'detail' && selectedId) {
-    const detail = getDetail(selectedId);
-    if (!detail) return null;
+    if (detailLoading || !detail) {
+      return (
+        <ThemedView style={styles.container}>
+          <ActivityIndicator size="large" style={{ marginTop: 40 }} />
+        </ThemedView>
+      );
+    }
     const badge = BADGE_MAP[detail.stockBadge];
 
     return (
