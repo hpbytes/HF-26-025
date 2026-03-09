@@ -1,4 +1,4 @@
-# 🏥 MedChain TN
+#  MedChain TN
 
 > AI + Blockchain Medical Inventory Management System for Tamil Nadu Healthcare Supply Chain
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 📋 Table of Contents
+##  Table of Contents
 
 - [Problem Statement](#-problem-statement)
 - [Solution](#-solution)
@@ -28,7 +28,7 @@
 
 ---
 
-## 🚨 Problem Statement
+##  Problem Statement
 
 Tamil Nadu's healthcare supply chain serving 77 million people suffers from five critical failures:
 
@@ -42,7 +42,7 @@ Tamil Nadu's healthcare supply chain serving 77 million people suffers from five
 
 ---
 
-## 💡 Solution
+##  Solution
 
 **MedChain TN** combines blockchain immutability with AI intelligence to fix every layer of the supply chain.
 
@@ -54,7 +54,7 @@ Mobile App  →  unified interface for manufacturers, distributors, patients
 
 ---
 
-## 🏗️ System Architecture
+##  System Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -86,7 +86,7 @@ Mobile App  →  unified interface for manufacturers, distributors, patients
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -102,7 +102,7 @@ Mobile App  →  unified interface for manufacturers, distributors, patients
 
 ---
 
-## 📁 Repository Structure
+##  Repository Structure
 
 ```
 /medchain-tn
@@ -166,7 +166,7 @@ Mobile App  →  unified interface for manufacturers, distributors, patients
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
@@ -338,7 +338,7 @@ npx hardhat test --network ganache
 
 ---
 
-## 🧠 ML Service
+##  ML Service
 
 ### 3 Intelligence Modules
 
@@ -369,7 +369,7 @@ Output:    expiry_risk, probability_of_waste,
 
 ---
 
-## 🔌 API Reference
+##  API Reference
 
 ### Auth
 ```
@@ -411,11 +411,11 @@ PATCH /alerts/:id/resolve
 
 ---
 
-## 📱 Mobile App
+##  Mobile App
 
 ### User Roles & Tab Structure
 
-#### 🧑‍⚕️ Patient (4 Tabs)
+####  Patient (4 Tabs)
 ```
 Home          ← drug search + availability + stock status
 Scan QR       ← verify drug authenticity via blockchain
@@ -423,7 +423,7 @@ Prescriptions ← track active + past prescriptions
 Notifications ← low stock alerts for prescribed medicines
 ```
 
-#### 🚚 Distributor (4 Tabs)
+####  Distributor (4 Tabs)
 ```
 Inventory     ← stock levels, batch breakdown, incoming shipments
 Transfers     ← initiate + accept + track batch transfers
@@ -431,7 +431,7 @@ Forecast      ← AI demand predictions 30/60/90 days
 Chain History ← full blockchain transaction log
 ```
 
-#### 🏭 Manufacturer (4 Tabs)
+####  Manufacturer (4 Tabs)
 ```
 Add Batch     ← register drug batch on blockchain + generate QR
 Supply Chain  ← map view of all batches + regional distribution
@@ -441,7 +441,7 @@ Alerts        ← anomaly feed + expiry warnings + resolve actions
 
 ---
 
-## 🎬 Demo Flow
+##  Demo Flow
 
 **End-to-end demo in 5 steps:**
 
@@ -469,7 +469,7 @@ Step 5 — Anomaly alert fires
 
 ---
 
-## 🔐 Security
+##  Security
 
 ```
 ✓ JWT required on all non-public endpoints
