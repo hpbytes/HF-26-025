@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, ScrollView, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { DrugSearchBar } from '@/components/patient/home/drug-search-bar';
@@ -7,7 +7,7 @@ import { RegionFilterRow } from '@/components/patient/home/region-filter-row';
 import { DrugAvailabilityCard } from '@/components/patient/home/drug-availability-card';
 import { FacilityCard } from '@/components/patient/home/facility-card';
 import { useDrugs } from '@/hooks/use-drugs';
-import type { StockBadge } from '@/hooks/use-drugs';
+import type { StockBadge, DrugDetail } from '@/hooks/use-drugs';
 
 type HomeView = 'drugList' | 'drugDetail';
 
@@ -19,13 +19,29 @@ const BADGE_MAP: Record<StockBadge, { label: string; color: string }> = {
 };
 
 export default function PatientHomeScreen() {
-  const { drugs, search, setSearch, region, setRegion, regions, getDrugDetail } = useDrugs();
+  const { drugs, search, setSearch, region, setRegion, regions, getDrugDetail, loading } = useDrugs();
   const [view, setView] = useState<HomeView>('drugList');
   const [selectedDrug, setSelectedDrug] = useState<string | null>(null);
+  const [detail, setDetail] = useState<DrugDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (view === 'drugDetail' && selectedDrug) {
+      setDetailLoading(true);
+      getDrugDetail(selectedDrug)
+        .then((d) => setDetail(d || null))
+        .finally(() => setDetailLoading(false));
+    }
+  }, [view, selectedDrug, getDrugDetail]);
 
   if (view === 'drugDetail' && selectedDrug) {
-    const detail = getDrugDetail(selectedDrug);
-    if (!detail) return null;
+    if (detailLoading || !detail) {
+      return (
+        <ThemedView style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
+          <ActivityIndicator size="large" color="#0a7ea4" />
+        </ThemedView>
+      );
+    }
     const badge = BADGE_MAP[detail.badge];
 
     return (
@@ -80,7 +96,7 @@ export default function PatientHomeScreen() {
     <ThemedView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <ThemedText type="title" style={styles.title}>Drug Availability</ThemedText>
-        <DrugSearchBar value={search} onChange={setSearch} />
+        <DrugSearchBar value={search} onChangeText={setSearch} />
         <RegionFilterRow regions={regions} selected={region} onSelect={setRegion} />
 
         <ThemedText style={styles.resultCount}>{drugs.length} medicines found</ThemedText>
@@ -88,7 +104,11 @@ export default function PatientHomeScreen() {
         {drugs.map((drug) => (
           <DrugAvailabilityCard
             key={drug.code}
-            drug={drug}
+            name={drug.name}
+            form={drug.form}
+            badge={drug.badge}
+            pharmacyCount={drug.pharmacyCount}
+            price={drug.price}
             onPress={() => {
               setSelectedDrug(drug.code);
               setView('drugDetail');

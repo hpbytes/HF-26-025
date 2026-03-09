@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { api } from '@/services/api';
+import { useAuth } from '@/contexts/auth-context';
 
 export type AuditAction = 'BATCH_CREATED' | 'TRANSFER_INITIATED' | 'TRANSFER_ACCEPTED' | 'TRANSFER_REJECTED' | 'BATCH_FLAGGED' | 'BATCH_DEACTIVATED' | 'EXPIRY_CHECK';
 
@@ -33,44 +35,78 @@ export interface BatchChain {
   custody: CustodyEntry[];
 }
 
-const MOCK_AUDIT: AuditEntry[] = [
-  { id: 'au1', action: 'TRANSFER_ACCEPTED', batchId: 'BATCH_TN_PARA_20240602_A1B2C3', drug: 'Paracetamol', actor: '0xaA36...AeF', actorRole: 'Distributor', timestamp: '2 Jun 2024, 14:30', txHash: '0xabc123def456...', blockNumber: 48521, details: 'Accepted 2500 units from PharmaCorp' },
-  { id: 'au2', action: 'TRANSFER_INITIATED', batchId: 'BATCH_TN_PARA_20240520_D4E5F6', drug: 'Paracetamol', actor: '0xaA36...AeF', actorRole: 'Distributor', timestamp: '25 May 2024, 10:15', txHash: '0xdef789abc012...', blockNumber: 48340, details: 'Initiated transfer of 800 units to SubDist Tambaram' },
-  { id: 'au3', action: 'TRANSFER_ACCEPTED', batchId: 'BATCH_TN_ARTE_20240529_F3A1B2', drug: 'Artemether', actor: '0xaA36...AeF', actorRole: 'Distributor', timestamp: '29 May 2024, 09:45', txHash: '0x456789abc012...', blockNumber: 48410, details: 'Accepted 180 units from MediGen Labs' },
-  { id: 'au4', action: 'BATCH_FLAGGED', batchId: 'BATCH_TN_INSU_20240601_C9D2E1', drug: 'Insulin', actor: 'System', actorRole: 'ML Engine', timestamp: '3 Jun 2024, 12:00', txHash: '0x789012def345...', blockNumber: 48550, details: 'Flagged: Stock dropped 62% in 4 hours' },
-  { id: 'au5', action: 'TRANSFER_REJECTED', batchId: 'BATCH_TN_AMOX_20240530_E4F5D6', drug: 'Amoxicillin', actor: 'Clinic Adyar', actorRole: 'Patient Facility', timestamp: '29 May 2024, 16:20', txHash: '0x012345abc678...', blockNumber: 48425, details: 'Rejected 200 units — packaging damaged' },
-  { id: 'au6', action: 'EXPIRY_CHECK', batchId: 'BATCH_TN_INSU_20240601_C9D2E1', drug: 'Insulin', actor: 'System', actorRole: 'Audit Contract', timestamp: '4 Jun 2024, 00:00', txHash: '0x345678def901...', blockNumber: 48600, details: 'Expiry check: 168 days remaining' },
-  { id: 'au7', action: 'BATCH_CREATED', batchId: 'BATCH_TN_METF_20240528_A1B2C3', drug: 'Metformin', actor: '0x9Aac...51C', actorRole: 'Manufacturer', timestamp: '28 May 2024, 08:00', txHash: '0x678901abc234...', blockNumber: 48290, details: 'Batch created with 3200 units' },
-];
+interface RawAuditEntry {
+  entryId: string;
+  batchId: string;
+  action: string;
+  performedBy: string;
+  timestamp: number;
+  metadata: string;
+}
 
-const MOCK_CHAINS: Record<string, BatchChain> = {
-  'BATCH_TN_PARA_20240602_A1B2C3': {
-    batchId: 'BATCH_TN_PARA_20240602_A1B2C3',
-    drug: 'Paracetamol',
-    manufacturer: 'PharmaCorp',
-    createdDate: '15 May 2024',
-    custody: [
-      { step: 1, actor: 'PharmaCorp', role: 'Manufacturer', action: 'Created batch', timestamp: '15 May 2024, 08:00', txHash: '0x111aaa...', location: 'Chennai Factory' },
-      { step: 2, actor: 'PharmaCorp', role: 'Manufacturer', action: 'Initiated transfer', timestamp: '1 Jun 2024, 10:00', txHash: '0x222bbb...', location: 'Chennai Factory' },
-      { step: 3, actor: 'MedDist Chennai', role: 'Distributor', action: 'Accepted transfer', timestamp: '2 Jun 2024, 14:30', txHash: '0x333ccc...', location: 'Chennai Warehouse' },
-    ],
-  },
-  'BATCH_TN_ARTE_20240529_F3A1B2': {
-    batchId: 'BATCH_TN_ARTE_20240529_F3A1B2',
-    drug: 'Artemether',
-    manufacturer: 'MediGen Labs',
-    createdDate: '10 May 2024',
-    custody: [
-      { step: 1, actor: 'MediGen Labs', role: 'Manufacturer', action: 'Created batch', timestamp: '10 May 2024, 09:00', txHash: '0x444ddd...', location: 'Madurai Plant' },
-      { step: 2, actor: 'MediGen Labs', role: 'Manufacturer', action: 'Initiated transfer', timestamp: '28 May 2024, 11:00', txHash: '0x555eee...' },
-      { step: 3, actor: 'MedDist Chennai', role: 'Distributor', action: 'Accepted transfer', timestamp: '29 May 2024, 09:45', txHash: '0x666fff...', location: 'Chennai Warehouse' },
-    ],
-  },
-};
+function fmtDate(ts: number): string {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' +
+    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function shortAddr(a: string): string {
+  return a.length > 10 ? a.slice(0, 6) + '...' + a.slice(-4) : a;
+}
+
+function inferRole(action: string): string {
+  if (action.includes('BATCH_CREATED')) return 'Manufacturer';
+  if (action.includes('TRANSFER')) return 'Distributor';
+  if (action.includes('FLAG') || action.includes('EXPIR')) return 'Audit Contract';
+  return 'System';
+}
+
+function mapEntry(e: RawAuditEntry, drug: string): AuditEntry {
+  return {
+    id: e.entryId,
+    action: e.action as AuditAction,
+    batchId: e.batchId,
+    drug,
+    actor: shortAddr(e.performedBy),
+    actorRole: inferRole(e.action),
+    timestamp: fmtDate(e.timestamp),
+    txHash: '',
+    blockNumber: 0,
+    details: e.metadata || e.action.replace(/_/g, ' ').toLowerCase(),
+  };
+}
 
 export function useChainHistory() {
-  const [auditLog] = useState<AuditEntry[]>(MOCK_AUDIT);
+  const { wallet } = useAuth();
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [batchChains, setBatchChains] = useState<Map<string, BatchChain>>(new Map());
   const [actionFilter, setActionFilter] = useState<'all' | AuditAction>('all');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!wallet) { setLoading(false); return; }
+    setLoading(true);
+
+    api.get<{ entries: RawAuditEntry[] }>(`/audit/wallet/${encodeURIComponent(wallet)}`)
+      .then(async (r) => {
+        // Get drug names for each unique batchId
+        const batchIds = [...new Set(r.entries.map((e) => e.batchId))];
+        const drugMap = new Map<string, string>();
+        await Promise.all(
+          batchIds.slice(0, 20).map(async (bid) => {
+            try {
+              const b = await api.get<{ drugName: string }>(`/batches/${encodeURIComponent(bid)}`);
+              drugMap.set(bid, b.drugName);
+            } catch { drugMap.set(bid, bid); }
+          }),
+        );
+
+        setAuditLog(r.entries.map((e) => mapEntry(e, drugMap.get(e.batchId) || e.batchId)));
+      })
+      .catch(() => setAuditLog([]))
+      .finally(() => setLoading(false));
+  }, [wallet]);
 
   const filtered = auditLog.filter((e) => {
     if (actionFilter === 'all') return true;
@@ -83,9 +119,42 @@ export function useChainHistory() {
   );
 
   const getBatchChain = useCallback(
-    (batchId: string): BatchChain | undefined => MOCK_CHAINS[batchId],
-    [],
+    (batchId: string): BatchChain | undefined => {
+      if (batchChains.has(batchId)) return batchChains.get(batchId);
+
+      // Trigger async load
+      api.get<{ entries: RawAuditEntry[] }>(`/audit/trail/${encodeURIComponent(batchId)}`)
+        .then(async (r) => {
+          let drug = batchId;
+          let manufacturer = '';
+          try {
+            const b = await api.get<{ drugName: string; registeredBy: string }>(`/batches/${encodeURIComponent(batchId)}`);
+            drug = b.drugName;
+            manufacturer = shortAddr(b.registeredBy);
+          } catch {}
+
+          const chain: BatchChain = {
+            batchId,
+            drug,
+            manufacturer,
+            createdDate: r.entries.length > 0 ? fmtDate(r.entries[0].timestamp) : '',
+            custody: r.entries.map((e, i) => ({
+              step: i + 1,
+              actor: shortAddr(e.performedBy),
+              role: inferRole(e.action),
+              action: e.action.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c: string) => c.toUpperCase()),
+              timestamp: fmtDate(e.timestamp),
+              txHash: '',
+            })),
+          };
+          setBatchChains((prev) => new Map(prev).set(batchId, chain));
+        })
+        .catch(() => {});
+
+      return undefined;
+    },
+    [batchChains],
   );
 
-  return { auditLog: filtered, actionFilter, setActionFilter, getEntry, getBatchChain };
+  return { auditLog: filtered, actionFilter, setActionFilter, getEntry, getBatchChain, loading };
 }

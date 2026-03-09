@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { api } from '@/services/api';
+import { useAuth } from '@/contexts/auth-context';
 
 export type TransferDirection = 'incoming' | 'outgoing';
 export type TransferStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
@@ -34,27 +36,92 @@ export interface TransferResult {
   gasUsed: number;
 }
 
-const MOCK_TRANSFERS: TransferItem[] = [
-  { id: 'tr1', batchId: 'BATCH_TN_PARA_20240602_A1B2C3', drug: 'Paracetamol', quantity: 2500, from: 'PharmaCorp', to: 'MedDist Chennai', direction: 'incoming', status: 'accepted', initiatedDate: '1 Jun 2024', completedDate: '2 Jun 2024', txHash: '0xabc123...def' },
-  { id: 'tr2', batchId: 'BATCH_TN_INSU_20240605_X1Y2Z3', drug: 'Insulin', quantity: 500, from: 'BioPharm India', to: 'MedDist Chennai', direction: 'incoming', status: 'pending', initiatedDate: '5 Jun 2024' },
-  { id: 'tr3', batchId: 'BATCH_TN_ARTE_20240604_M3N4O5', drug: 'Artemether', quantity: 300, from: 'MediGen Labs', to: 'MedDist Chennai', direction: 'incoming', status: 'pending', initiatedDate: '4 Jun 2024' },
-  { id: 'tr4', batchId: 'BATCH_TN_PARA_20240520_D4E5F6', drug: 'Paracetamol', quantity: 800, from: 'MedDist Chennai', to: 'SubDist Tambaram', direction: 'outgoing', status: 'accepted', initiatedDate: '25 May 2024', completedDate: '26 May 2024', txHash: '0xdef456...789' },
-  { id: 'tr5', batchId: 'BATCH_TN_AMOX_20240530_E4F5D6', drug: 'Amoxicillin', quantity: 200, from: 'MedDist Chennai', to: 'Clinic Adyar', direction: 'outgoing', status: 'rejected', initiatedDate: '28 May 2024', completedDate: '29 May 2024' },
-  { id: 'tr6', batchId: 'BATCH_TN_METF_20240528_A1B2C3', drug: 'Metformin', quantity: 600, from: 'MedDist Chennai', to: 'SubDist Velachery', direction: 'outgoing', status: 'pending', initiatedDate: '3 Jun 2024' },
-  { id: 'tr7', batchId: 'BATCH_TN_CHLO_20240603_P6Q7R8', drug: 'Chloroquine', quantity: 1000, from: 'PharmaCorp', to: 'MedDist Chennai', direction: 'incoming', status: 'pending', initiatedDate: '3 Jun 2024' },
-];
+interface RawTransfer {
+  transferId: string;
+  batchId: string;
+  from: string;
+  to: string;
+  quantity: number;
+  fromRegion: string;
+  toRegion: string;
+  initiatedAt: number;
+  completedAt: number;
+  status: number;
+  rejectionReason: string;
+}
 
-function generateHex(len: number): string {
-  const chars = '0123456789ABCDEF';
-  let result = '';
-  for (let i = 0; i < len; i++) result += chars[Math.floor(Math.random() * 16)];
-  return result;
+const STATUS_MAP: Record<number, TransferStatus> = { 0: 'pending', 1: 'accepted', 2: 'rejected', 3: 'cancelled' };
+
+function fmtDate(ts: number): string {
+  if (!ts) return '';
+  return new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function shortAddr(a: string): string {
+  return a.length > 10 ? a.slice(0, 6) + '...' + a.slice(-4) : a;
 }
 
 export function useTransfers() {
-  const [transfers, setTransfers] = useState<TransferItem[]>(MOCK_TRANSFERS);
+  const { wallet } = useAuth();
+  const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [directionFilter, setDirectionFilter] = useState<'all' | 'incoming' | 'outgoing'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'accepted' | 'rejected'>('all');
+  const [loading, setLoading] = useState(true);
+
+  const loadTransfers = useCallback(async () => {
+    if (!wallet) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      // Get pending transfers (incoming)
+      const pending = await api.get<{ transfers: RawTransfer[] }>(`/transfers/pending/${encodeURIComponent(wallet)}`);
+
+      // Also get owned batches so we can fetch their transfer history (outgoing)
+      const owned = await api.get<{ batches: { batchId: string; drugName: string }[] }>(`/batches/by/owner/${encodeURIComponent(wallet)}`);
+
+      const items: TransferItem[] = [];
+      const seen = new Set<string>();
+
+      // Map pending incoming
+      for (const t of pending.transfers) {
+        let drug = t.batchId;
+        try { const b = await api.get<{ drugName: string }>(`/batches/${encodeURIComponent(t.batchId)}`); drug = b.drugName; } catch {}
+        const dir: TransferDirection = t.to.toLowerCase() === wallet.toLowerCase() ? 'incoming' : 'outgoing';
+        items.push({
+          id: t.transferId, batchId: t.batchId, drug, quantity: t.quantity,
+          from: shortAddr(t.from), to: shortAddr(t.to), direction: dir,
+          status: STATUS_MAP[t.status] || 'pending', initiatedDate: fmtDate(t.initiatedAt),
+          completedDate: t.completedAt ? fmtDate(t.completedAt) : undefined,
+        });
+        seen.add(t.transferId);
+      }
+
+      // Get transfer history for each owned batch
+      for (const batch of owned.batches.slice(0, 10)) {
+        try {
+          const hist = await api.get<{ transfers: RawTransfer[] }>(`/transfers/history/${encodeURIComponent(batch.batchId)}`);
+          for (const t of hist.transfers) {
+            if (seen.has(t.transferId)) continue;
+            seen.add(t.transferId);
+            const dir: TransferDirection = t.to.toLowerCase() === wallet.toLowerCase() ? 'incoming' : 'outgoing';
+            items.push({
+              id: t.transferId, batchId: t.batchId, drug: batch.drugName, quantity: t.quantity,
+              from: shortAddr(t.from), to: shortAddr(t.to), direction: dir,
+              status: STATUS_MAP[t.status] || 'pending', initiatedDate: fmtDate(t.initiatedAt),
+              completedDate: t.completedAt ? fmtDate(t.completedAt) : undefined,
+            });
+          }
+        } catch { /* skip batch */ }
+      }
+
+      setTransfers(items);
+    } catch {
+      setTransfers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [wallet]);
+
+  useEffect(() => { loadTransfers(); }, [loadTransfers]);
 
   const filtered = transfers.filter((t) => {
     if (directionFilter !== 'all' && t.direction !== directionFilter) return false;
@@ -70,50 +137,33 @@ export function useTransfers() {
   );
 
   const initiateTransfer = useCallback(async (data: InitiateTransferData): Promise<TransferResult> => {
-    await new Promise((r) => setTimeout(r, 1500));
-    const transferId = `tr${Date.now()}`;
-    const result: TransferResult = {
-      transferId,
+    const res = await api.post<{ txHash: string; transferId: string }>('/transfers', {
       batchId: data.batchId,
-      txHash: `0x${generateHex(64)}`,
-      blockNumber: 48000 + Math.floor(Math.random() * 1000),
+      to: data.toWallet,
+      quantity: data.quantity,
+      toRegion: 'TN',
+    });
+    const result: TransferResult = {
+      transferId: res.transferId,
+      batchId: data.batchId,
+      txHash: res.txHash,
+      blockNumber: 0,
       timestamp: new Date().toISOString(),
-      gasUsed: 52000 + Math.floor(Math.random() * 8000),
+      gasUsed: 0,
     };
-    setTransfers((prev) => [
-      ...prev,
-      {
-        id: transferId,
-        batchId: data.batchId,
-        drug: data.drug,
-        quantity: data.quantity,
-        from: 'MedDist Chennai',
-        to: data.toName,
-        direction: 'outgoing' as TransferDirection,
-        status: 'pending' as TransferStatus,
-        initiatedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-      },
-    ]);
+    await loadTransfers();
     return result;
-  }, []);
+  }, [loadTransfers]);
 
   const acceptTransfer = useCallback(async (id: string) => {
-    await new Promise((r) => setTimeout(r, 1000));
-    setTransfers((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, status: 'accepted' as TransferStatus, completedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }), txHash: `0x${generateHex(64)}` } : t,
-      ),
-    );
-  }, []);
+    await api.post(`/transfers/${encodeURIComponent(id)}/accept`);
+    await loadTransfers();
+  }, [loadTransfers]);
 
   const rejectTransfer = useCallback(async (id: string) => {
-    await new Promise((r) => setTimeout(r, 1000));
-    setTransfers((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, status: 'rejected' as TransferStatus, completedDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) } : t,
-      ),
-    );
-  }, []);
+    await api.post(`/transfers/${encodeURIComponent(id)}/reject`, { reason: 'Rejected' });
+    await loadTransfers();
+  }, [loadTransfers]);
 
-  return { transfers: filtered, pending, directionFilter, setDirectionFilter, statusFilter, setStatusFilter, getTransfer, initiateTransfer, acceptTransfer, rejectTransfer };
+  return { transfers: filtered, pending, directionFilter, setDirectionFilter, statusFilter, setStatusFilter, getTransfer, initiateTransfer, acceptTransfer, rejectTransfer, loading };
 }

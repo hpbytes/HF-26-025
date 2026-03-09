@@ -85,9 +85,9 @@ async function main() {
     }
   };
 
-  const outPath = path.join(deploymentsDir, "deployed.json");
+  const outPath = path.join(__dirname, "..", "deployed.json");
   fs.writeFileSync(outPath, JSON.stringify(deployed, null, 2));
-  console.log("\n✅ All contracts deployed. Addresses saved to deployments/deployed.json");
+  console.log("\n✅ All contracts deployed. Addresses saved to deployed.json");
 
   return deployed;
 }

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { api } from '@/services/api';
 
 export type ScanState = 'scanning' | 'loading' | 'result';
 export type VerifyResult = 'authentic' | 'expired' | 'invalid';
@@ -28,48 +29,29 @@ export interface ScanResult {
   reason?: string;
 }
 
-function generateHex(len: number): string {
-  const chars = '0123456789abcdef';
-  let result = '';
-  for (let i = 0; i < len; i++) result += chars[Math.floor(Math.random() * 16)];
-  return result;
+interface VerifyResponse {
+  isValid: boolean;
+  drugName: string;
+  region: string;
+  expiryDate: number;
+  currentOwner: string;
+  ownerName: string;
+  status: number;
 }
 
-const MOCK_VALID: ScanResult = {
-  result: 'authentic',
-  drug: 'Paracetamol',
-  form: '500mg tablet',
-  batchId: 'BATCH_TN_PARA_20240601_A3F9C1',
-  manufacturer: 'MedCorp TN',
-  manufacturerVerified: true,
-  registeredDate: '28 May 2024',
-  expiryDate: 'June 2027',
-  daysLeft: 1095,
-  safeToUse: true,
-  custody: [
-    { step: 1, actor: 'MedCorp TN', role: 'Manufacturer', action: 'Manufactured', timestamp: '28 May 2024' },
-    { step: 2, actor: 'MedDist Chennai', role: 'Distributor', action: 'Received', timestamp: '01 Jun 2024' },
-    { step: 3, actor: 'You (Patient Verified)', role: 'Patient', action: 'Verified', timestamp: 'Now' },
-  ],
-  txHash: `0x4f3a${generateHex(56)}c9d2`,
-  blockNumber: 48291,
-};
+interface AuditEntryRaw {
+  entryId: string;
+  batchId: string;
+  action: string;
+  performedBy: string;
+  timestamp: number;
+  metadata: string;
+}
 
-const MOCK_EXPIRED: ScanResult = {
-  result: 'expired',
-  drug: 'Paracetamol',
-  form: '500mg tablet',
-  batchId: 'BATCH_TN_PARA_20230101_X1Y2Z3',
-  expiryDate: 'January 2024',
-  daysLeft: -430,
-  safeToUse: false,
-};
-
-const MOCK_INVALID: ScanResult = {
-  result: 'invalid',
-  batchId: 'BATCH_TN_XXX_UNKNOWN',
-  reason: 'Batch not found on blockchain',
-};
+function fmtDate(ts: number): string {
+  if (!ts) return '';
+  return new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 export function useScan() {
   const [state, setState] = useState<ScanState>('scanning');
@@ -77,27 +59,41 @@ export function useScan() {
 
   const verifyBatch = useCallback(async (batchId: string): Promise<ScanResult> => {
     setState('loading');
-    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const v = await api.get<VerifyResponse>(`/batches/${encodeURIComponent(batchId)}/verify`);
+      const now = Math.floor(Date.now() / 1000);
+      const daysLeft = Math.floor((v.expiryDate - now) / 86400);
 
-    let result: ScanResult;
-    const upper = batchId.toUpperCase();
-    if (upper.includes('EXPIRED') || upper.includes('20230')) {
-      result = { ...MOCK_EXPIRED, batchId };
-    } else if (upper.includes('XXX') || upper.includes('FAKE') || upper.includes('UNKNOWN')) {
-      result = { ...MOCK_INVALID, batchId };
-    } else {
-      result = { ...MOCK_VALID, batchId, txHash: `0x${generateHex(64)}` };
+      let custody: CustodyEntry[] = [];
+      try {
+        const a = await api.get<{ entries: AuditEntryRaw[] }>(`/audit/trail/${encodeURIComponent(batchId)}`);
+        custody = a.entries.map((e, i) => ({
+          step: i + 1,
+          actor: e.performedBy.slice(0, 6) + '...' + e.performedBy.slice(-4),
+          role: e.action.includes('BATCH_CREATED') ? 'Manufacturer' : e.action.includes('TRANSFER') ? 'Distributor' : 'System',
+          action: e.action.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c: string) => c.toUpperCase()),
+          timestamp: fmtDate(e.timestamp),
+        }));
+      } catch { /* audit not available */ }
+
+      if (daysLeft < 0) {
+        const r: ScanResult = { result: 'expired', drug: v.drugName, batchId, expiryDate: fmtDate(v.expiryDate), daysLeft, safeToUse: false };
+        setScanResult(r); setState('result'); return r;
+      }
+
+      const r: ScanResult = {
+        result: 'authentic', drug: v.drugName, batchId,
+        manufacturer: v.ownerName || v.currentOwner, manufacturerVerified: v.isValid,
+        expiryDate: fmtDate(v.expiryDate), daysLeft, safeToUse: true, custody,
+      };
+      setScanResult(r); setState('result'); return r;
+    } catch (err: any) {
+      const r: ScanResult = { result: 'invalid', batchId, reason: err.message || 'Batch not found on blockchain' };
+      setScanResult(r); setState('result'); return r;
     }
-
-    setScanResult(result);
-    setState('result');
-    return result;
   }, []);
 
-  const resetScan = useCallback(() => {
-    setState('scanning');
-    setScanResult(null);
-  }, []);
+  const resetScan = useCallback(() => { setState('scanning'); setScanResult(null); }, []);
 
   return { state, scanResult, verifyBatch, resetScan };
 }

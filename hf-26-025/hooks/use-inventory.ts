@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { api } from '@/services/api';
+import { useAuth } from '@/contexts/auth-context';
 
 export type StockStatus = 'ok' | 'low' | 'critical';
 
@@ -35,75 +37,109 @@ function getStatus(qty: number): StockStatus {
   return 'ok';
 }
 
-const MOCK_STOCK: StockItem[] = [
-  {
-    drug: 'Paracetamol',
-    drugCode: 'PARA',
-    totalQuantity: 4200,
-    status: 'ok',
-    batches: [
-      { batchId: 'BATCH_TN_PARA_20240602_A1B2C3', quantity: 2500, manufactureDate: '15 May 2024', expiryDate: '15 May 2026', manufacturer: 'PharmaCorp', receivedDate: '2 Jun 2024' },
-      { batchId: 'BATCH_TN_PARA_20240520_D4E5F6', quantity: 1700, manufactureDate: '1 May 2024', expiryDate: '1 May 2026', manufacturer: 'PharmaCorp', receivedDate: '20 May 2024' },
-    ],
-  },
-  {
-    drug: 'Artemether',
-    drugCode: 'ARTE',
-    totalQuantity: 180,
-    status: 'low',
-    batches: [
-      { batchId: 'BATCH_TN_ARTE_20240529_F3A1B2', quantity: 180, manufactureDate: '10 May 2024', expiryDate: '10 May 2025', manufacturer: 'MediGen Labs', receivedDate: '29 May 2024' },
-    ],
-  },
-  {
-    drug: 'Insulin',
-    drugCode: 'INSU',
-    totalQuantity: 42,
-    status: 'critical',
-    batches: [
-      { batchId: 'BATCH_TN_INSU_20240601_C9D2E1', quantity: 42, manufactureDate: '20 May 2024', expiryDate: '20 Nov 2024', manufacturer: 'BioPharm India', receivedDate: '1 Jun 2024' },
-    ],
-  },
-  {
-    drug: 'Amoxicillin',
-    drugCode: 'AMOX',
-    totalQuantity: 1800,
-    status: 'ok',
-    batches: [
-      { batchId: 'BATCH_TN_AMOX_20240530_E4F5D6', quantity: 1000, manufactureDate: '15 May 2024', expiryDate: '15 May 2026', manufacturer: 'PharmaCorp', receivedDate: '30 May 2024' },
-      { batchId: 'BATCH_TN_AMOX_20240515_G7H8I9', quantity: 800, manufactureDate: '1 May 2024', expiryDate: '1 May 2026', manufacturer: 'MediGen Labs', receivedDate: '15 May 2024' },
-    ],
-  },
-  {
-    drug: 'Metformin',
-    drugCode: 'METF',
-    totalQuantity: 3200,
-    status: 'ok',
-    batches: [
-      { batchId: 'BATCH_TN_METF_20240528_A1B2C3', quantity: 3200, manufactureDate: '10 May 2024', expiryDate: '10 May 2026', manufacturer: 'PharmaCorp', receivedDate: '28 May 2024' },
-    ],
-  },
-  {
-    drug: 'Chloroquine',
-    drugCode: 'CHLO',
-    totalQuantity: 150,
-    status: 'low',
-    batches: [
-      { batchId: 'BATCH_TN_CHLO_20240515_AABB11', quantity: 150, manufactureDate: '1 May 2024', expiryDate: '1 May 2025', manufacturer: 'BioPharm India', receivedDate: '15 May 2024' },
-    ],
-  },
-];
+function fmtDate(ts: number): string {
+  if (!ts) return '';
+  return new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
-const MOCK_INCOMING: IncomingShipment[] = [
-  { transferId: 't1', batchId: 'BATCH_TN_INSU_20240605_X1Y2Z3', drug: 'Insulin', quantity: 500, from: 'BioPharm India', initiatedDate: '5 Jun 2024', status: 'pending' },
-  { transferId: 't2', batchId: 'BATCH_TN_ARTE_20240604_M3N4O5', drug: 'Artemether', quantity: 300, from: 'MediGen Labs', initiatedDate: '4 Jun 2024', status: 'in_transit' },
-  { transferId: 't3', batchId: 'BATCH_TN_CHLO_20240603_P6Q7R8', drug: 'Chloroquine', quantity: 1000, from: 'PharmaCorp', initiatedDate: '3 Jun 2024', status: 'pending' },
-];
+interface RawBatch {
+  batchId: string;
+  drugName: string;
+  region: string;
+  quantity: number;
+  expiryDate: number;
+  status: number;
+  isActive: boolean;
+  manufactureDate?: number;
+  registeredBy?: string;
+  currentOwner?: string;
+  registeredAt?: number;
+}
+
+interface RawTransfer {
+  transferId: string;
+  batchId: string;
+  from: string;
+  to: string;
+  quantity: number;
+  fromRegion: string;
+  toRegion: string;
+  initiatedAt: number;
+  completedAt: number;
+  status: number;
+  rejectionReason: string;
+}
 
 export function useInventory() {
-  const [stock] = useState<StockItem[]>(MOCK_STOCK);
-  const [incoming] = useState<IncomingShipment[]>(MOCK_INCOMING);
+  const { wallet } = useAuth();
+  const [stock, setStock] = useState<StockItem[]>([]);
+  const [incoming, setIncoming] = useState<IncomingShipment[]>([]);
   const [filter, setFilter] = useState<'all' | 'ok' | 'low' | 'critical'>('all');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!wallet) { setLoading(false); return; }
+    setLoading(true);
+
+    const loadStock = api.get<{ batches: RawBatch[] }>(`/batches/by/owner/${encodeURIComponent(wallet)}`)
+      .then(async (r) => {
+        // Aggregate batches by drug
+        const map = new Map<string, { drug: string; batches: RawBatch[] }>();
+        for (const b of r.batches) {
+          const key = b.drugName;
+          if (!map.has(key)) map.set(key, { drug: key, batches: [] });
+          map.get(key)!.batches.push(b);
+        }
+
+        const items: StockItem[] = [];
+        for (const [, v] of map) {
+          const totalQuantity = v.batches.reduce((s, b) => s + b.quantity, 0);
+          items.push({
+            drug: v.drug,
+            drugCode: v.drug.slice(0, 4).toUpperCase(),
+            totalQuantity,
+            status: getStatus(totalQuantity),
+            batches: v.batches.map((b) => ({
+              batchId: b.batchId,
+              quantity: b.quantity,
+              manufactureDate: fmtDate(b.manufactureDate || 0),
+              expiryDate: fmtDate(b.expiryDate),
+              manufacturer: b.registeredBy ? b.registeredBy.slice(0, 6) + '...' + b.registeredBy.slice(-4) : 'Unknown',
+              receivedDate: fmtDate(b.registeredAt || 0),
+            })),
+          });
+        }
+        setStock(items);
+      })
+      .catch(() => setStock([]));
+
+    const loadIncoming = api.get<{ transfers: RawTransfer[] }>(`/transfers/pending/${encodeURIComponent(wallet)}`)
+      .then(async (r) => {
+        const shipments: IncomingShipment[] = [];
+        for (const t of r.transfers) {
+          // Look up drug name from batch
+          let drug = t.batchId;
+          try {
+            const b = await api.get<{ drugName: string }>(`/batches/${encodeURIComponent(t.batchId)}`);
+            drug = b.drugName;
+          } catch { /* use batchId */ }
+
+          shipments.push({
+            transferId: t.transferId,
+            batchId: t.batchId,
+            drug,
+            quantity: t.quantity,
+            from: t.from.slice(0, 6) + '...' + t.from.slice(-4),
+            initiatedDate: fmtDate(t.initiatedAt),
+            status: 'pending',
+          });
+        }
+        setIncoming(shipments);
+      })
+      .catch(() => setIncoming([]));
+
+    Promise.all([loadStock, loadIncoming]).finally(() => setLoading(false));
+  }, [wallet]);
 
   const filtered = stock.filter((s) => {
     if (filter === 'all') return true;
@@ -123,14 +159,14 @@ export function useInventory() {
   );
 
   const acceptShipment = useCallback(async (transferId: string) => {
-    await new Promise((r) => setTimeout(r, 1000));
-    // In production, call backend POST /transfers/:id/accept
+    await api.post(`/transfers/${encodeURIComponent(transferId)}/accept`);
+    setIncoming((prev) => prev.filter((s) => s.transferId !== transferId));
   }, []);
 
   const rejectShipment = useCallback(async (transferId: string, reason: string) => {
-    await new Promise((r) => setTimeout(r, 1000));
-    // In production, call backend POST /transfers/:id/reject
+    await api.post(`/transfers/${encodeURIComponent(transferId)}/reject`, { reason });
+    setIncoming((prev) => prev.filter((s) => s.transferId !== transferId));
   }, []);
 
-  return { stock: filtered, incoming, filter, setFilter, summary, getDrug, acceptShipment, rejectShipment };
+  return { stock: filtered, incoming, filter, setFilter, summary, getDrug, acceptShipment, rejectShipment, loading };
 }

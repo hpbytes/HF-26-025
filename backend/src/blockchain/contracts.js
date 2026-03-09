@@ -22,7 +22,7 @@ function getAddresses() {
     };
   }
 
-  const deployedPath = path.join(__dirname, "..", "..", "..", "contracts", "deployments", "deployed.json");
+  const deployedPath = path.join(__dirname, "..", "..", "..", "contracts", "deployed.json");
   if (fs.existsSync(deployedPath)) {
     const data = JSON.parse(fs.readFileSync(deployedPath, "utf8"));
     return data.contracts;
